@@ -8,8 +8,7 @@ from sense_hat import *
 from meteo_props import *
 
 SENSE = SenseHat()
-
-PROPERTIES = MeteoProps()
+PROPERTIES = MeteoProps()  # Properties for sending email.
 
 # SETTINGS = {
 #     "measuring_interval": 60,
@@ -67,6 +66,7 @@ LOGGING = False
 # instantiate parser
 PARSER = argparse.ArgumentParser(description='Monitoring indoor temperature and relative humidity')
 
+# add parser arguments
 PARSER.add_argument('-m', type=int,
                     action='store', default=MEASURING_INTERVAL,
                     help='Measuring interval in seconds (default: every 60 seconds)')
@@ -94,7 +94,7 @@ PARSER.add_argument('--notify', action='store_true',
 # parse arguments
 ARGS = PARSER.parse_args()
 
-# check values
+# check arguments
 if ARGS.n < ARGS.m:
     PARSER.error("Notification interval has to be larger than measuring interval!")
 
@@ -107,6 +107,13 @@ LOGGING = ARGS.log
 
 
 def create_message(temp, hum):
+    """
+    Create notification message
+
+    :param temp:
+    :param hum:
+    :return: message
+    """
 
     st = "median" if STATISTICS == "m" else "average"
     s = "hours" if NOTIFY_INTERVAL > 3600 else "minutes"
@@ -129,6 +136,12 @@ def send_notification(t, h):
 
 # logic for sending email
 def send_mail(msg):
+    """
+    Send E-Mail to address specified in meteo_props.py
+
+    :param msg: message to send as String
+    :return: none
+    """
 
     pw = PROPERTIES.from_mail_pw
     fm = PROPERTIES.from_mail
@@ -156,10 +169,19 @@ def median(alist):
 
 
 def mean(alist):
+    """
+    Calculate median of a given list
+
+    :param alist: list with values
+    :return: median
+    """
+    # TODO: Check if alist is empty or of size 1
+
     return sum(alist) / len(alist)
 
 
 def stat(alist):
+    # TODO: Check if alist is empty or of size 1
     return median(alist) if STATISTICS == "m" else mean(alist)
 
 
@@ -210,7 +232,7 @@ def main():
         h_list.append(measured_humidity)
 
         # Diskretisierung der Daten
-        # TODO: if Abfrage nur pseudocode!!
+        # TODO: Vergleich von Zeitunterschied
         if datetime - start_time_d >= DISCRETISATION:
 
             temp = stat(t_list)
@@ -225,7 +247,7 @@ def main():
             start_time_d = datetime
 
         # send notification
-        # TODO: if Abfrage nur pseudocode!!
+        # TODO: Vergleich von Zeitunterschied
         if datetime - start_time_n >= NOTIFY_INTERVAL:
 
             send_notification(stat(t_list_discrete), stat(h_list_discrete))
