@@ -10,78 +10,25 @@ from meteo_props import *
 SENSE = SenseHat()
 PROPERTIES = MeteoProps()  # Properties for sending email.
 
-# SETTINGS = {
-#     "measuring_interval": 60,
-#     "statistics": "m",
-#     "notification_interval": 43200,
-#     "discretisation": 1800,
-#     "logging": False,
-#     "notification": False
-# }
-
-
-
-# Measuring interval
-# [seconds]
-# default: every minute
-MEASURING_INTERVAL = 60
-
-# Data evaluation; m: Median, a: Average
-# [string]
-# default: Median
-STATISTICS = "m"
-
-# Email notification interval
-# [seconds]
-# default: every 12 hours
-NOTIFY_INTERVAL = 43200
-
-# Enable/Disable Email notification
-# [boolean]
-# default: false
-NOTIFY = False
-
-# Discretisation of measurements
-# [seconds]
-# default: every 30 minutes
-DISCRETISATION = 1800
-
-# Write data to local json file
-# [boolean]
-# default: False
-# DOCUMENTATION = False
-
-# Send alert Email if measurements exceed certain values
-# [double]
-# default: no alert
-# alert_t = 999;
-# alert_h = 999;
-
-# Enable/disable debug logging
-# [boolean]
-# default: False
-LOGGING = False
-
-
 # instantiate parser
 PARSER = argparse.ArgumentParser(description='Monitoring indoor temperature and relative humidity')
 
 # add parser arguments
 PARSER.add_argument('-m', type=int,
-                    action='store', default=MEASURING_INTERVAL,
+                    action='store', default=60,
                     help='Measuring interval in seconds (default: every 60 seconds)')
 
 PARSER.add_argument('-n', type=int,
-                    action='store', default=NOTIFY_INTERVAL,
-                    help='Notification interval in seconds (default: every 12 hours)'+
+                    action='store', default=43200,
+                    help='Notification interval in seconds (default: every 12 hours)' +
                     '\nNotification has to be manually enabled with argument [--notify]')
 
 PARSER.add_argument('-d', type=int,
-                    action='store', default=DISCRETISATION,
+                    action='store', default=1800,
                     help='Discretisation of measurements in seconds (default: every 30 minutes)')
 
 PARSER.add_argument('-s', choices=['m', 'a'],
-                    action='store', default=STATISTICS,
+                    action='store', default="m",
                     help='Data evaluation; m: Median, a: Average (default: Median)')
 
 PARSER.add_argument('--log', action='store_true',
@@ -98,9 +45,12 @@ ARGS = PARSER.parse_args()
 if ARGS.n < ARGS.m:
     PARSER.error("Notification interval has to be larger than measuring interval!")
 
+if ARGS.n < ARGS.d:
+    PARSER.error("Notification interval has to be larger than discretisation interval!")
+
 MEASURING_INTERVAL = ARGS.m
 NOTIFY_INTERVAL = ARGS.n
-NOTIFY = ARGS.notify
+NOTIFY = ARGS.notify  # TODO: wird unten noch gar nicht abgefragt
 DISCRETISATION = ARGS.d
 STATISTICS = ARGS.s
 LOGGING = ARGS.log
@@ -119,10 +69,13 @@ def create_message(temp, hum):
     s = "hours" if NOTIFY_INTERVAL > 3600 else "minutes"
     time = round((NOTIFY_INTERVAL/3600), 0) if NOTIFY_INTERVAL > 3600 else round((NOTIFY_INTERVAL/60), 0)
 
-    mt = "The " + st + " temperature for the last " + time + " " + s + " is: " + temp
-    mh = "The " + st + " humidity for the last " + time + " " + s + " is: " + hum
+    mt = "The " + st + " temperature for the last " + str(time) + " " + s + " is: " + str(temp)
+    mh = "The " + st + " humidity for the last " + str(time) + " " + s + " is: " + str(hum)
 
     msg = mt + "\n" + mh
+
+    if LOGGING:
+        print("msg: ", msg)
 
     return msg
 
@@ -154,12 +107,16 @@ def send_mail(msg):
     server.quit()
 
     if LOGGING:
-        print("mail successfully sent at: ", datetime.datetime.now())
+        print("mail successfully sent at: ", datetime.now())
 
 
 def median(alist):
-    srtd = sorted(alist)
     length = len(alist)
+
+    # if length == 1:
+    #     return alist[0]
+
+    srtd = sorted(alist)
     mid = length//2
 
     if length % 2 == 0:
@@ -175,13 +132,18 @@ def mean(alist):
     :param alist: list with values
     :return: median
     """
-    # TODO: Check if alist is empty or of size 1
 
     return sum(alist) / len(alist)
 
 
 def stat(alist):
-    # TODO: Check if alist is empty or of size 1
+
+    if LOGGING:
+        print("alist: ", alist)
+
+    if len(alist) == 0:
+        return -9999
+
     return median(alist) if STATISTICS == "m" else mean(alist)
 
 
@@ -190,10 +152,12 @@ def get_cpu_temperature():
     cpu_temp = temp_file.read()
     temp_file.close()
 
-    if LOGGING:
-        print("CPU Temp: " + str(round(cpu_temp,1)))
+    t = round(float(cpu_temp)/1000, 1)
 
-    return float(cpu_temp)/1000
+    if LOGGING:
+        print("CPU Temp: ", t)
+
+    return t
 
 
 def get_ambient_temperature():
@@ -201,12 +165,18 @@ def get_ambient_temperature():
     hat_temp_h = SENSE.get_temperature_from_humidity()
     hat_temp_p = SENSE.get_temperature_from_pressure()
 
-    if hat_temp_p != 0 & hat_temp_h != 0:
+    if LOGGING:
+        print("hat_temp_h: ", hat_temp_h)
+        print("hat_temp_p: ", hat_temp_p)
 
-        return round(((hat_temp_h + hat_temp_p) / 2), 1)
+    # if hat_temp_p & hat_temp_h != 0:
+    #
+    #     return round(((hat_temp_h + hat_temp_p) / 2), 1)
+    #
+    # else:
+    #     get_ambient_temperature()
 
-    else:
-        get_ambient_temperature()
+    return round(((hat_temp_h + hat_temp_p) / 2), 1)
 
 
 def get_relative_humidity():
@@ -220,20 +190,29 @@ def main():
     h_list_discrete = []
     t_list_discrete = []
 
-    start_time_n = datetime
-    start_time_d = start_time_n
+    start_n = datetime.now()
+    start_d = start_n
 
     while True:
+        start_w = datetime.now()
 
-        measured_temp = get_ambient_temperature
+        if LOGGING:
+            print("start_w: ", start_w)
+
+        measured_temp = get_ambient_temperature()
         measured_humidity = get_relative_humidity()
 
         t_list.append(measured_temp)
         h_list.append(measured_humidity)
 
+        dtn = start_w - start_n
+        dtd = start_w - start_d
+
         # Diskretisierung der Daten
-        # TODO: Vergleich von Zeitunterschied
-        if datetime - start_time_d >= DISCRETISATION:
+        if dtd.total_seconds() >= DISCRETISATION:
+
+            if LOGGING:
+                print("dtd: ", dtd)
 
             temp = stat(t_list)
             humidity = stat(h_list)
@@ -244,30 +223,32 @@ def main():
             t_list.clear()
             h_list.clear()
 
-            start_time_d = datetime
+            start_d = datetime.now()
 
         # send notification
-        # TODO: Vergleich von Zeitunterschied
-        if datetime - start_time_n >= NOTIFY_INTERVAL:
+        if NOTIFY & (dtn.total_seconds() >= NOTIFY_INTERVAL):
+
+            if LOGGING:
+                print("dtn: ", dtn)
 
             send_notification(stat(t_list_discrete), stat(h_list_discrete))
 
             t_list_discrete.clear()
             h_list_discrete.clear()
 
-            start_time_n = datetime
+            start_n = datetime.now()
 
         # check system temperature
         cpu_temp = get_cpu_temperature()
         if cpu_temp > 60:
-            send_mail("HIGH CPU TEMPERATURE!!: ", cpu_temp)
+            send_mail("HIGH CPU TEMPERATURE!!: " + str(cpu_temp))
 
-        sleep(MEASURING_INTERVAL)
+        sleep((MEASURING_INTERVAL - (datetime.now() - start_w).total_seconds()) % MEASURING_INTERVAL)
 
 
-def joystick():
-
-    test = ""
+# def joystick():
+#
+#     test = ""
 
 
 def initialize():
